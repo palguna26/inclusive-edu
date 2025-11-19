@@ -25,10 +25,12 @@ function AppShell() {
         <div className="points" aria-label="Points">⭐ {points}</div>
       </header>
       <main className="app-main">
-        <aside className="sidebar">
-          <LessonList />
-          <AccessibilityDashboard onToggleVoiceCommands={() => {}} />
-        </aside>
+        <div className="sidebar-wrapper">
+          <aside className="sidebar">
+            <LessonList />
+            <AccessibilityDashboard onToggleVoiceCommands={() => {}} />
+          </aside>
+        </div>
         <section className="scene">
           <VRScene onCaptionChange={setCaption} />
         </section>
