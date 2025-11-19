@@ -1,68 +1,122 @@
+import { Canvas, useFrame } from '@react-three/fiber'
+import { OrbitControls, Sky } from '@react-three/drei'
 import { useContext, useEffect, useMemo, useRef, useState } from 'react'
+import * as THREE from 'three'
 import { AccessibilityContext } from '../context/AccessibilityContext.jsx'
 import { LessonContext } from '../context/LessonContext.jsx'
 import { LESSONS } from '../lessons/lessons.js'
 import { speak } from '../utils/speech.js'
 
+/**
+ * A reusable interactive model component
+ * Handles both spheres and boxes, reacts to clicks, and supports voice narration
+ */
+function InteractiveModel({ model, onSpeak }) {
+  const meshRef = useRef()
+
+  // Handle click for speech and vibration
+  const handleClick = () => {
+    if (onSpeak) onSpeak(model.id)
+    window.navigator?.vibrate?.(50)
+  }
+
+  // Small idle rotation animation
+  useFrame(() => {
+    if (meshRef.current) meshRef.current.rotation.y += 0.003
+  })
+
+  // Choose geometry type based on model
+  let geometry
+  if (model.primitive === 'sphere') {
+    geometry = new THREE.SphereGeometry(model.radius, 32, 32)
+  } else if (model.primitive === 'box') {
+    geometry = new THREE.BoxGeometry(model.width, model.height, model.depth)
+  }
+
+  return (
+    <mesh
+      ref={meshRef}
+      geometry={geometry}
+      position={model.position.split(' ').map(Number)}
+      onClick={handleClick}
+    >
+      <meshStandardMaterial color={model.color} />
+    </mesh>
+  )
+}
+
+/**
+ * Main VR Scene component
+ * Replaces the A-Frame version with Three.js + React integration
+ */
 export default function VRScene({ onCaptionChange }) {
   const { voiceGuidance } = useContext(AccessibilityContext)
-  const { currentLessonId, completeLesson } = useContext(LessonContext)
+  const { currentLessonId } = useContext(LessonContext)
   const [caption, setCaption] = useState('')
-  const sceneRef = useRef(null)
 
-  const lesson = useMemo(() => LESSONS.find(l => l.id === currentLessonId), [currentLessonId])
+  // Load the active lesson based on context
+  const lesson = useMemo(
+    () => LESSONS.find(l => l.id === currentLessonId),
+    [currentLessonId]
+  )
 
+  // Handle captions and voice narration
   useEffect(() => {
     setCaption(lesson?.caption || '')
     onCaptionChange?.(lesson?.caption || '')
     if (voiceGuidance && lesson?.caption) speak(lesson.caption)
   }, [lesson, voiceGuidance, onCaptionChange])
 
-  useEffect(() => {
-    function onModelClick(e) {
-      const targetId = e.target?.getAttribute('id')
-      if (!targetId || !lesson) return
-      const t = lesson.tts?.[targetId]
-      if (t) speak(t)
-      window.navigator?.vibrate?.(50)
-    }
-    const el = sceneRef.current
-    if (!el) return
-    el.addEventListener('click', onModelClick)
-    return () => el.removeEventListener('click', onModelClick)
-  }, [lesson])
+  // Handle speech for interactive elements
+  const handleSpeak = (id) => {
+    const t = lesson?.tts?.[id]
+    if (t) speak(t)
+  }
+
+  // Loading state (if lesson not ready)
+  if (!lesson) {
+    return (
+      <div
+        className="vr-container"
+        style={{
+          display: 'grid',
+          placeItems: 'center',
+          background: '#000022',
+          color: '#9bb1ff',
+        }}
+      >
+        Loading 3D environment…
+      </div>
+    )
+  }
 
   return (
     <div className="vr-container">
-      <a-scene vr-mode-ui="enabled: true" embedded renderer="alpha: false" style={{ width: '100%', height: '60vh', display: 'block' }}>
-        <a-sky color="#000022"></a-sky>
-        <a-entity light="type: ambient; intensity: 0.6"></a-entity>
-        <a-entity light="type: directional; intensity: 0.8" position="0 2 -1"></a-entity>
-        <a-entity position="0 1.6 0">
-          <a-camera wasd-controls-enabled="true"></a-camera>
-        </a-entity>
-        <a-entity ref={sceneRef} id="interactive-root">
-          {lesson?.models?.map(model => {
-            if (model.primitive === 'sphere') {
-              return (
-                <a-sphere key={model.id} id={model.id} position={model.position} radius={`${model.radius}`} color={model.color}></a-sphere>
-              )
-            }
-            if (model.primitive === 'box') {
-              return (
-                <a-box key={model.id} id={model.id} position={model.position} depth={`${model.depth}`} height={`${model.height}`} width={`${model.width}`} color={model.color}></a-box>
-              )
-            }
-            return null
-          })}
-        </a-entity>
-        <a-plane position="0 0 -4" rotation="-90 0 0" width="20" height="20" color="#0b1020"></a-plane>
-        <a-entity position="0 0 -4">
-          <a-plane color="#111" height="0.4" width="2" opacity="0.6"></a-plane>
-        </a-entity>
-      </a-scene>
+      <Canvas
+        camera={{ position: [0, 1.6, 4], fov: 60 }}
+        style={{ background: '#000022', width: '100%', height: '100%' }}
+      >
+        {/* Lights */}
+        <ambientLight intensity={0.6} />
+        <directionalLight position={[0, 2, -1]} intensity={0.8} />
+
+        {/* Sky simulation */}
+        <Sky distance={450000} sunPosition={[0, 1, 0]} turbidity={0.1} />
+
+        {/* Ground plane */}
+        <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -1, 0]}>
+          <planeGeometry args={[20, 20]} />
+          <meshStandardMaterial color="#0b1020" />
+        </mesh>
+
+        {/* Models from lesson */}
+        {lesson.models?.map((model) => (
+          <InteractiveModel key={model.id} model={model} onSpeak={handleSpeak} />
+        ))}
+
+        {/* Camera controls */}
+        <OrbitControls enableZoom enablePan enableRotate />
+      </Canvas>
     </div>
   )
 }
-
-
